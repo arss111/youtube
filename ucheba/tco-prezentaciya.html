@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TCO — совокупная стоимость владения</title>
+
+<!-- === FONTS ===
+     Unbounded — заголовки, Golos Text — основной текст, JetBrains Mono — подписи и цифры.
+     Все три поддерживают кириллицу. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+/* ===========================================
+   CSS CUSTOM PROPERTIES (THEME)
+   Меняйте цвета и шрифты здесь — меняется вся презентация.
+   --wl — высота «линии воды» на слайде (задаётся у каждого слайда отдельно).
+   =========================================== */
+:root {
+    --stage-bg: #020a10;
+    --slide-bg: #061620;
+    --sky-top: #0c2636;
+    --sky-low: #0a2131;
+    --sea-top: #07303f;
+    --sea-mid: #04192a;
+    --sea-deep: #020c13;
+
+    --ice: #d8f6ff;
+    --cyan: #5ee6ff;
+    --cyan-soft: rgba(94, 230, 255, .35);
+    --amber: #ffb547;
+    --text: #e9f6fb;
+    --muted: #7fa3b3;
+    --hint: #4d6f7e;
+    --panel: rgba(8, 40, 56, .55);
+    --panel-line: rgba(94, 230, 255, .18);
+
+    --font-display: 'Unbounded', sans-serif;
+    --font-body: 'Golos Text', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+
+    --pad: 120px;
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* ===========================================
+   FIXED 16:9 STAGE: MANDATORY BASE STYLES
+   (полное содержимое viewport-base.css)
+   =========================================== */
+
+/* 1. Lock the browser viewport */
+html,
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: var(--stage-bg, #000);
+}
+
+/* 2. Full-window deck viewport */
+.deck-viewport {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    background: var(--stage-bg, #000);
+}
+
+/* 3. Fixed 16:9 design canvas.
+   JavaScript sets transform: translate(...) scale(...). */
+.deck-stage {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    transform-origin: 0 0;
+    background: var(--slide-bg, #fff);
+}
+
+/* 4. Slides stack inside the fixed stage.
+   Content must be laid out at 1920×1080, not reflowed per device. */
+.slide {
+    position: absolute;
+    inset: 0;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    display: block;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    background: var(--slide-bg, #fff);
+}
+
+.slide.active,
+.slide.visible {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+    z-index: 1;
+}
+
+/* 5. Keep media inside authored slide bounds */
+img,
+video,
+canvas,
+svg {
+    max-width: 100%;
+    max-height: 100%;
+}
+
+/* 6. Presentation chrome stays outside the slide design system */
+.deck-controls {
+    position: fixed;
+    left: 50%;
+    bottom: 22px;
+    transform: translateX(-50%);
+    z-index: 1000;
+}
+
+/* 7. Print one fixed-size slide per page */
+@media print {
+    html,
+    body {
+        width: 1920px;
+        height: auto;
+        overflow: visible;
+        background: #fff;
+    }
+
+    .deck-viewport {
+        position: static;
+        overflow: visible;
+        background: #fff;
+    }
+
+    .deck-stage {
+        position: static;
+        width: auto;
+        height: auto;
+        transform: none !important;
+        background: none;
+    }
+
+    .slide {
+        position: relative;
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        width: 1920px;
+        height: 1080px;
+        break-after: page;
+        page-break-after: always;
+    }
+
+    .slide:last-child {
+        break-after: auto;
+        page-break-after: auto;
+    }
+
+    .deck-controls {
+        display: none !important;
+    }
+}
+
+/* 8. Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.2s !important;
+    }
+}
+
+/* ===========================================
+   SLIDE ATMOSPHERE
+   «Небо» над линией воды и «глубина» под ней.
+   Высота линии — переменная --wl у каждого слайда.
+   =========================================== */
+body { font-family: var(--font-body); color: var(--text); }
+
+.slide {
+    --wl: 290px;
+    transition: opacity .6s ease, visibility .6s;
+    background:
+        radial-gradient(ellipse 50% 30% at 70% 0%, rgba(94, 230, 255, .08), transparent 70%),
+        linear-gradient(180deg,
+            var(--sky-top) 0,
+            var(--sky-low) var(--wl),
+            var(--sea-top) var(--wl),
+            var(--sea-mid) calc(var(--wl) + 320px),
+            var(--sea-deep) 100%);
+}
+/* тонкие горизонтальные «слои глубины» под водой */
+.slide::before {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; top: var(--wl); bottom: 0;
+    background: repeating-linear-gradient(0deg, rgba(94, 230, 255, .03) 0 1px, transparent 1px 36px);
+    pointer-events: none;
+}
+/* сама линия воды */
+.waterline {
+    position: absolute;
+    left: 0; right: 0; top: var(--wl);
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--cyan) 12%, var(--cyan) 88%, transparent);
+    box-shadow: 0 0 24px var(--cyan);
+    transform: scaleX(0);
+    transition: transform 1.1s var(--ease-out-expo) .05s;
+}
+.slide.visible .waterline { transform: none; }
+
+/* ===========================================
+   ANIMATIONS
+   .rv — появление снизу. Порядок (--i) расставляет JS автоматически.
+   =========================================== */
+.rv {
+    opacity: 0;
+    transform: translateY(26px);
+    transition: opacity .7s var(--ease-out-expo), transform .7s var(--ease-out-expo);
+}
+.slide.visible .rv {
+    opacity: 1;
+    transform: none;
+    transition-delay: calc(var(--i, 0) * 110ms + 180ms);
+}
+
+/* ===========================================
+   TYPOGRAPHY & SLIDE HEADER
+   =========================================== */
+.mono { font-family: var(--font-mono); }
+.kicker {
+    font-family: var(--font-mono);
+    font-size: 22px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--cyan);
+}
+.hdr { position: absolute; left: var(--pad); right: var(--pad); top: 92px; }
+.hdr h2 {
+    margin-top: 18px;
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 64px;
+    line-height: 1.08;
+    letter-spacing: -.02em;
+}
+em.a { font-style: normal; color: var(--amber); }
+em.c { font-style: normal; color: var(--cyan); }
+
+/* основная зона контента под водой */
+.body { position: absolute; left: var(--pad); right: var(--pad); top: 360px; bottom: 120px; }
+
+/* нижний колонтитул слайда (добавляется JS) */
+.chrome {
+    position: absolute;
+    left: var(--pad); right: var(--pad); bottom: 48px;
+    display: flex; justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: 20px;
+    color: var(--hint);
+}
+
+/* ===========================================
+   ICEBERG (общий символ для разных слайдов)
+   =========================================== */
+.berg { position: absolute; max-width: none; max-height: none; overflow: visible; }
+.berg .tip { fill: rgba(216, 246, 255, .92); }
+.berg .bd { fill: url(#iceGrad); stroke: rgba(94, 230, 255, .55); stroke-width: 2; }
+.berg-fade { opacity: 0; transition: opacity 1.4s ease .4s; }
+.slide.visible .berg-fade { opacity: var(--o, 1); }
+
+/* ===========================================
+   SLIDE 1 — TITLE
+   =========================================== */
+.s-title { --wl: 430px; }
+.s-title .kicker { position: absolute; left: 110px; top: 96px; }
+.s-title h1 {
+    position: absolute; left: 110px; top: 150px; width: 1060px;
+    font-family: var(--font-display); font-weight: 800;
+    font-size: 84px; line-height: 1.04; letter-spacing: -.02em;
+}
+.s-title .lead { position: absolute; left: 110px; top: 500px; }
+.s-title .sub { font-size: 36px; line-height: 1.3; color: var(--ice); }
+.chips { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 22px; }
+.chip {
+    font-family: var(--font-mono); font-size: 22px;
+    padding: 10px 18px; border-radius: 999px;
+    border: 1px solid var(--cyan-soft); color: var(--cyan);
+}
+.s-title .author { position: absolute; left: 110px; bottom: 72px; font-size: 24px; color: var(--muted); }
+.s-title .author b { color: var(--text); font-weight: 500; }
+.t-lbl { font-family: var(--font-mono); font-size: 21px; fill: var(--ice); opacity: 0; transition: opacity .6s ease; }
+.t-lbl.price { fill: var(--amber); font-size: 23px; }
+.t-pt { fill: var(--cyan); }
+.slide.visible .t-lbl { opacity: 1; }
+
+/* ===========================================
+   SLIDE 2 — PLAN (глубиномер)
+   =========================================== */
+.plan { position: absolute; left: 150px; top: 350px; }
+.plan::before {
+    content: ""; position: absolute; left: 10px; top: 14px; bottom: 14px; width: 2px;
+    background: linear-gradient(180deg, var(--cyan), rgba(94, 230, 255, .1));
+}
+.plan li { list-style: none; position: relative; display: flex; align-items: baseline; gap: 36px; height: 98px; padding-left: 56px; }
+.plan li::before {
+    content: ""; position: absolute; left: 3px; top: 16px; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--sea-top); border: 2px solid var(--cyan); box-shadow: 0 0 14px var(--cyan-soft);
+}
+.plan .n { font-family: var(--font-mono); font-size: 26px; color: var(--cyan); width: 60px; }
+.plan .t { font-size: 40px; font-weight: 500; }
+
+/* ===========================================
+   STATEMENT SLIDES (определение, сдвиг к OPEX)
+   =========================================== */
+.s-def { --wl: 620px; }
+.statement {
+    position: absolute; left: var(--pad); top: 200px; width: 1500px;
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 66px; line-height: 1.15; letter-spacing: -.02em;
+}
+.facts { position: absolute; left: var(--pad); right: var(--pad); top: 700px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 60px; }
+.fact .big { font-family: var(--font-display); font-weight: 800; font-size: 56px; color: var(--cyan); }
+.fact .cap { margin-top: 14px; font-size: 28px; line-height: 1.35; color: var(--ice); }
+
+/* ===========================================
+   CARDS / COLUMNS
+   =========================================== */
+.cols { display: grid; gap: 48px; }
+.cols.c3 { grid-template-columns: repeat(3, 1fr); }
+.cols.c2 { grid-template-columns: repeat(2, 1fr); }
+.card {
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-radius: 22px;
+    padding: 40px 40px 44px;
+}
+.card .n { font-family: var(--font-mono); font-size: 22px; color: var(--cyan); }
+.card h3 { margin-top: 18px; font-family: var(--font-display); font-weight: 700; font-size: 34px; line-height: 1.2; }
+.card p { margin-top: 16px; font-size: 27px; line-height: 1.4; color: var(--muted); }
+.motto {
+    font-family: var(--font-display); font-weight: 700; font-size: 44px; margin-bottom: 56px;
+}
+
+/* ===========================================
+   SLIDE 5 — STRUCTURE (над водой / под водой)
+   =========================================== */
+.s-struct { --wl: 590px; }
+.layer { position: absolute; left: var(--pad); right: 560px; }
+.layer .lbl { font-family: var(--font-mono); font-size: 22px; letter-spacing: .14em; text-transform: uppercase; }
+.layer .lbl b { font-weight: 700; }
+.layer.up { top: 300px; }
+.layer.up .lbl { color: var(--amber); }
+.layer.down { top: 650px; }
+.layer.down .lbl { color: var(--cyan); }
+.pills { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 24px; }
+.pill { font-size: 30px; font-weight: 500; padding: 14px 26px; border-radius: 14px; }
+.layer.up .pill { background: rgba(216, 246, 255, .92); color: #072030; }
+.layer.down .pill { border: 1.5px dashed var(--cyan-soft); color: var(--ice); background: rgba(94, 230, 255, .05); }
+.formula-line { position: absolute; left: var(--pad); bottom: 120px; font-family: var(--font-mono); font-size: 30px; color: var(--muted); }
+.formula-line b { color: var(--text); font-weight: 700; }
+
+/* ===========================================
+   SLIDE 6 — LIFECYCLE TIMELINE
+   =========================================== */
+.timeline { position: absolute; left: var(--pad); right: var(--pad); top: 430px; display: grid; grid-template-columns: 1fr 1fr 1fr 1.5fr 1fr 1fr; gap: 18px; }
+.timeline::before { content: ""; position: absolute; left: 0; right: 0; top: 23px; height: 2px; background: var(--cyan-soft); }
+.ph { position: relative; padding-top: 72px; }
+.ph::before {
+    content: ""; position: absolute; left: 0; top: 12px; width: 24px; height: 24px; border-radius: 50%;
+    background: var(--sea-top); border: 2px solid var(--cyan);
+}
+.ph .n { font-family: var(--font-mono); font-size: 20px; color: var(--cyan); }
+.ph h3 { margin-top: 10px; font-size: 30px; font-weight: 600; line-height: 1.2; }
+.ph p { margin-top: 12px; font-size: 23px; line-height: 1.4; color: var(--muted); }
+.ph.hot { background: rgba(255, 181, 71, .08); border: 1px solid rgba(255, 181, 71, .35); border-radius: 20px; padding: 72px 26px 28px; margin-top: -24px; }
+.ph.hot::before { left: 26px; top: 36px; background: var(--amber); border-color: var(--amber); box-shadow: 0 0 20px rgba(255, 181, 71, .6); }
+.ph.hot .n, .ph.hot h3 { color: var(--amber); }
+.ph.hot p { color: var(--ice); }
+.callout { position: absolute; left: var(--pad); right: var(--pad); top: 800px; font-size: 34px; line-height: 1.35; }
+.callout::before { content: "→ "; color: var(--amber); }
+
+/* ===========================================
+   SLIDE 7 — HIDDEN COSTS GRID
+   =========================================== */
+.hidden-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 34px 40px; }
+.hc { border-top: 2px solid var(--cyan-soft); padding-top: 24px; }
+.hc .n { font-family: var(--font-mono); font-size: 20px; color: var(--cyan); }
+.hc h3 { margin-top: 12px; font-family: var(--font-display); font-weight: 700; font-size: 31px; line-height: 1.2; }
+.hc p { margin-top: 12px; font-size: 25px; line-height: 1.4; color: var(--muted); }
+
+/* ===========================================
+   SLIDE 8 — CAPEX / OPEX PANELS
+   =========================================== */
+.duo { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; }
+.duo .card { padding: 46px 48px; }
+.duo .tag { font-family: var(--font-display); font-weight: 800; font-size: 78px; letter-spacing: -.02em; }
+.duo .capex .tag { color: var(--amber); }
+.duo .opex .tag { color: var(--cyan); }
+.duo .verb { margin-top: 6px; font-family: var(--font-mono); font-size: 24px; color: var(--muted); }
+.duo .def { margin-top: 26px; font-size: 31px; line-height: 1.38; }
+.duo .acc { margin-top: 22px; font-size: 27px; color: var(--ice); }
+.duo .acc b { font-weight: 600; }
+.duo .chips { margin-top: 28px; }
+.duo .capex .chip { border-color: rgba(255, 181, 71, .45); color: var(--amber); }
+
+/* ===========================================
+   TABLES (сравнение и пример расчёта)
+   =========================================== */
+table.cmp { width: 100%; border-collapse: collapse; font-size: 28px; }
+.cmp th, .cmp td { text-align: left; padding: 20px 24px; border-bottom: 1px solid var(--panel-line); vertical-align: top; line-height: 1.35; }
+.cmp thead th { font-family: var(--font-mono); font-size: 22px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid var(--cyan-soft); }
+.cmp thead th.ca { color: var(--amber); }
+.cmp thead th.op { color: var(--cyan); }
+.cmp td:first-child { color: var(--muted); width: 22%; }
+.cmp .num { font-family: var(--font-mono); font-size: 34px; font-weight: 500; }
+.cmp .sm { display: block; margin-top: 6px; font-family: var(--font-mono); font-size: 19px; color: var(--hint); }
+.cmp tr.total td { border-bottom: none; padding-top: 26px; }
+.cmp tr.total td:first-child { color: var(--text); font-weight: 600; font-size: 32px; }
+.cmp tr.total .num { font-size: 50px; font-weight: 700; color: var(--amber); }
+.cmp tr.total .num.lose { color: var(--ice); }
+
+/* ===========================================
+   SLIDE 10 — SHIFT TO OPEX
+   =========================================== */
+.s-shift { --wl: 470px; }
+.s-shift .statement { top: 150px; font-size: 58px; width: 1560px; }
+.s-shift .cols { position: absolute; left: var(--pad); right: var(--pad); top: 540px; }
+.list-h { font-family: var(--font-mono); font-size: 22px; letter-spacing: .14em; text-transform: uppercase; }
+.list-h.plus { color: var(--cyan); }
+.list-h.minus { color: var(--amber); }
+.dl { margin-top: 20px; }
+.dl li { list-style: none; font-size: 30px; line-height: 1.35; padding: 12px 0 12px 40px; position: relative; }
+.dl li::before { content: "+"; position: absolute; left: 0; font-family: var(--font-mono); color: var(--cyan); }
+.dl.neg li::before { content: "−"; color: var(--amber); }
+.punch { position: absolute; left: var(--pad); bottom: 110px; font-family: var(--font-display); font-weight: 700; font-size: 34px; }
+
+/* ===========================================
+   SLIDE 11 — FORMULA
+   =========================================== */
+.fx { font-family: var(--font-mono); font-size: 62px; font-weight: 500; display: flex; align-items: center; gap: 22px; }
+.fx .eq { color: var(--muted); }
+.fx b { color: var(--amber); font-weight: 700; }
+.sig { display: inline-flex; flex-direction: column; align-items: center; line-height: 1; font-size: 26px; color: var(--muted); }
+.sig .s { font-size: 86px; color: var(--cyan); line-height: .95; }
+.frac { display: inline-flex; flex-direction: column; align-items: center; }
+.frac .top { padding: 0 10px 10px; border-bottom: 3px solid var(--text); }
+.frac .bot { padding-top: 10px; }
+sup, sub { font-size: .55em; }
+.fx-cap { font-family: var(--font-mono); font-size: 22px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-bottom: 18px; }
+.legend { display: flex; gap: 56px; margin-top: 44px; font-size: 27px; color: var(--muted); }
+.legend b { font-family: var(--font-mono); color: var(--cyan); font-weight: 700; margin-right: 8px; }
+.steps { display: flex; gap: 14px; margin-top: 32px; font-family: var(--font-mono); font-size: 22px; color: var(--ice); flex-wrap: wrap; }
+.steps span { padding: 10px 16px; border-radius: 10px; background: rgba(94, 230, 255, .07); }
+.steps i { font-style: normal; color: var(--hint); align-self: center; }
+
+/* ===========================================
+   SLIDE 13 — CHART
+   =========================================== */
+.chart-wrap { position: absolute; left: 90px; top: 330px; width: 1120px; height: 640px; }
+.chart-wrap svg { width: 1120px; height: 640px; max-width: none; max-height: none; overflow: visible; }
+.grid-l { stroke: rgba(94, 230, 255, .1); stroke-width: 1; }
+.ax-t { font-family: var(--font-mono); font-size: 20px; fill: var(--hint); }
+.ln { fill: none; stroke-width: 5; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset 1.6s var(--ease-out-expo) .5s; }
+.slide.visible .ln { stroke-dashoffset: 0; }
+.ln.own { stroke: var(--amber); }
+.ln.cloud { stroke: var(--cyan); }
+.end-t { font-family: var(--font-mono); font-size: 24px; font-weight: 700; opacity: 0; transition: opacity .5s 1.8s; }
+.slide.visible .end-t { opacity: 1; }
+.cross { opacity: 0; transition: opacity .5s 2s; }
+.slide.visible .cross { opacity: 1; }
+.side { position: absolute; left: 1290px; right: var(--pad); top: 360px; }
+.side .kpi { font-family: var(--font-display); font-weight: 800; font-size: 96px; color: var(--ice); }
+.side .kpi small { font-size: 40px; }
+.side .kcap { margin-top: 8px; font-size: 27px; color: var(--muted); line-height: 1.35; }
+.side .legend2 { margin-top: 46px; display: flex; flex-direction: column; gap: 14px; font-size: 26px; }
+.side .legend2 span::before { content: ""; display: inline-block; width: 30px; height: 5px; border-radius: 3px; margin-right: 14px; vertical-align: middle; background: currentColor; }
+.side .note { margin-top: 46px; font-size: 26px; line-height: 1.4; color: var(--ice); }
+
+/* ===========================================
+   SLIDE 15 — CONCLUSIONS
+   =========================================== */
+.concl li { list-style: none; display: grid; grid-template-columns: 90px 1fr; align-items: baseline; padding: 22px 0; border-bottom: 1px solid var(--panel-line); }
+.concl li:last-child { border-bottom: none; }
+.concl .n { font-family: var(--font-mono); font-size: 26px; color: var(--cyan); }
+.concl .t { font-size: 33px; line-height: 1.38; }
+
+/* ===========================================
+   SLIDE 16 — THANK YOU
+   =========================================== */
+.s-end { --wl: 600px; }
+.s-end h2 { position: absolute; left: var(--pad); top: 250px; font-family: var(--font-display); font-weight: 800; font-size: 120px; line-height: 1; letter-spacing: -.03em; }
+.s-end .q { position: absolute; left: var(--pad); top: 660px; font-size: 44px; color: var(--ice); }
+.s-end .who { position: absolute; left: var(--pad); top: 750px; font-size: 26px; color: var(--muted); }
+.s-end .who b { color: var(--text); font-weight: 500; }
+
+/* ===========================================
+   SPEAKER NOTES (скрыты на слайде)
+   =========================================== */
+.notes { display: none; }
+
+/* ===========================================
+   DECK CHROME (вне слайдов): прогресс, кнопки,
+   глубиномер, заметки, подсказка по клавишам
+   =========================================== */
+.progress { position: fixed; left: 0; top: 0; height: 3px; background: var(--cyan); box-shadow: 0 0 12px var(--cyan); z-index: 1001; transition: width .5s var(--ease-out-expo); }
+
+.deck-controls {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px; border-radius: 999px;
+    background: rgba(3, 16, 26, .82); border: 1px solid var(--panel-line);
+    backdrop-filter: blur(8px);
+    font-family: var(--font-mono); color: var(--ice);
+    transition: opacity .4s;
+}
+.deck-controls.idle { opacity: 0; }
+.deck-controls button {
+    all: unset; cursor: pointer; padding: 8px 14px; border-radius: 999px;
+    font-size: clamp(12px, 1.1vw, 15px); color: var(--ice);
+}
+.deck-controls button:hover, .deck-controls button:focus-visible { background: rgba(94, 230, 255, .14); }
+.deck-controls .count { font-size: clamp(12px, 1.1vw, 15px); padding: 0 8px; color: var(--muted); min-width: 64px; text-align: center; }
+
+/* глубиномер справа — прогресс как «погружение» */
+.depth { position: absolute; right: 52px; top: 140px; bottom: 140px; width: 30px; z-index: 5; pointer-events: none; }
+.depth::before { content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 1px; background: rgba(94, 230, 255, .2); }
+.depth .tick { position: absolute; right: 0; width: 10px; height: 1px; background: rgba(94, 230, 255, .35); }
+.depth .mark { position: absolute; right: -5px; width: 11px; height: 11px; margin-top: -5px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 14px var(--cyan); transition: top .6s var(--ease-out-expo); }
+.depth .dl2 { position: absolute; right: 20px; margin-top: -12px; font-family: var(--font-mono); font-size: 18px; color: var(--cyan); transition: top .6s var(--ease-out-expo); white-space: nowrap; }
+
+.notes-panel {
+    position: fixed; left: 50%; bottom: 76px; transform: translateX(-50%);
+    width: min(920px, calc(100vw - 32px)); max-height: 40vh; overflow: auto;
+    padding: 20px 24px; border-radius: 16px;
+    background: rgba(3, 16, 26, .94); border: 1px solid var(--panel-line);
+    font-size: clamp(14px, 1.4vw, 18px); line-height: 1.55; color: var(--ice);
+    z-index: 1002; display: none;
+}
+.notes-panel.open { display: block; }
+.notes-panel .h { font-family: var(--font-mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--cyan); margin-bottom: 8px; }
+
+.help {
+    position: fixed; inset: 0; display: none; place-items: center; z-index: 1003;
+    background: rgba(2, 10, 16, .7);
+}
+.help.open { display: grid; }
+.help .box { padding: 28px 32px; border-radius: 18px; background: #04182a; border: 1px solid var(--panel-line); font-size: clamp(14px, 1.4vw, 17px); color: var(--ice); line-height: 1.9; }
+.help kbd { font-family: var(--font-mono); padding: 2px 8px; border-radius: 6px; background: rgba(94, 230, 255, .12); color: var(--cyan); margin-right: 8px; }
+
+/* ===========================================
+   INLINE EDITING
+   E — режим правки, Ctrl+S — сохранить HTML-файл
+   =========================================== */
+.edit-hotzone { position: fixed; top: 0; left: 0; width: 80px; height: 80px; z-index: 10000; cursor: pointer; }
+.edit-toggle {
+    position: fixed; top: 16px; left: 16px; z-index: 10001;
+    padding: 8px 14px; border-radius: 999px; border: 1px solid var(--panel-line);
+    background: rgba(3, 16, 26, .9); color: var(--ice); font: 500 14px var(--font-mono); cursor: pointer;
+    opacity: 0; pointer-events: none; transition: opacity .3s ease;
+}
+.edit-toggle.show, .edit-toggle.active { opacity: 1; pointer-events: auto; }
+.edit-toggle.active { background: var(--amber); color: #111; border-color: var(--amber); }
+.edit-reset {
+    position: fixed; top: 16px; left: 190px; z-index: 10001; display: none;
+    padding: 8px 14px; border-radius: 999px; border: 1px solid var(--panel-line);
+    background: rgba(3, 16, 26, .9); color: var(--ice); font: 500 14px var(--font-mono); cursor: pointer;
+}
+body.editing .edit-reset { display: block; }
+body.editing [contenteditable="true"] { outline: 1px dashed rgba(255, 181, 71, .55); outline-offset: 6px; cursor: text; }
+body.editing [contenteditable="true"]:focus { outline: 2px solid var(--amber); }
+
+@media print {
+    .progress, .depth, .notes-panel, .help, .edit-hotzone, .edit-toggle, .edit-reset { display: none !important; }
+    .rv, .t-lbl, .end-t, .cross, .berg-fade { opacity: 1 !important; transform: none !important; }
+    .berg-fade { opacity: var(--o, 1) !important; }
+    .waterline { transform: none !important; }
+    .ln { stroke-dashoffset: 0 !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- Общие SVG-определения: градиент льда и символ айсберга (линия воды в символе — y=430) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+        <linearGradient id="iceGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#7fd9ef" stop-opacity=".38"/>
+            <stop offset="1" stop-color="#7fd9ef" stop-opacity=".04"/>
+        </linearGradient>
+        <symbol id="berg" viewBox="1120 250 630 750">
+            <polygon class="tip" fill="rgba(216,246,255,.92)" points="1330,430 1395,318 1425,342 1462,262 1510,356 1556,430"/>
+            <polygon class="bd" fill="url(#iceGrad)" stroke="rgba(94,230,255,.55)" stroke-width="2" points="1270,432 1616,432 1730,560 1712,724 1626,880 1468,980 1296,936 1178,806 1140,644 1192,520"/>
+        </symbol>
+    </defs>
+</svg>
+
+<div class="deck-viewport">
+<main class="deck-stage" id="deckStage">
+
+    <!-- === SLIDE 1: TITLE === -->
+    <section class="slide s-title" data-title="Титул">
+        <svg class="berg" viewBox="0 0 1920 1080" style="left:0;top:0;width:1920px;height:1080px" aria-hidden="true">
+            <g class="berg-fade"><use href="#berg" x="1120" y="250" width="630" height="750"/></g>
+            <text class="t-lbl price" x="1600" y="300" style="transition-delay:.9s">цена покупки</text>
+            <circle class="t-pt t-lbl" cx="1300" cy="520" r="5" style="transition-delay:1.3s"/><text class="t-lbl" x="1316" y="527" style="transition-delay:1.3s">персонал и поддержка</text>
+            <circle class="t-pt t-lbl" cx="1240" cy="610" r="5" style="transition-delay:1.45s"/><text class="t-lbl" x="1256" y="617" style="transition-delay:1.45s">энергия и охлаждение</text>
+            <circle class="t-pt t-lbl" cx="1320" cy="690" r="5" style="transition-delay:1.6s"/><text class="t-lbl" x="1336" y="697" style="transition-delay:1.6s">простои</text>
+            <circle class="t-pt t-lbl" cx="1220" cy="770" r="5" style="transition-delay:1.75s"/><text class="t-lbl" x="1236" y="777" style="transition-delay:1.75s">обучение и интеграция</text>
+            <circle class="t-pt t-lbl" cx="1330" cy="850" r="5" style="transition-delay:1.9s"/><text class="t-lbl" x="1346" y="857" style="transition-delay:1.9s">безопасность</text>
+            <circle class="t-pt t-lbl" cx="1380" cy="925" r="5" style="transition-delay:2.05s"/><text class="t-lbl" x="1396" y="932" style="transition-delay:2.05s">вывод из эксплуатации</text>
+        </svg>
+        <div class="waterline"></div>
+        <div class="kicker rv">Модуль 3 · Тема 14</div>
+        <h1 class="rv">Совокупная стоимость владения <em class="a">(TCO)</em></h1>
+        <div class="lead rv">
+            <p class="sub">как ключевая метрика ИТ-инфраструктуры</p>
+            <div class="chips"><span class="chip">структура TCO</span><span class="chip">скрытые затраты</span><span class="chip">CAPEX vs OPEX</span></div>
+        </div>
+        <p class="author rv"><b>Махов А. С.</b> · группа [ВСТАВЬ] · Затраты и эффективность в ИТ · 2026</p>
+        <aside class="notes">Здравствуйте! Тема моего доклада — совокупная стоимость владения, или TCO, как ключевая метрика ИТ-инфраструктуры. Я расскажу, из чего складывается TCO, какие затраты обычно остаются незамеченными и чем капитальные затраты — CAPEX — отличаются от операционных — OPEX. В конце покажу расчёт на условном примере.</aside>
+    </section>
+
+    <!-- === SLIDE 2: PLAN === -->
+    <section class="slide" data-title="План доклада">
+        <svg class="berg berg-fade" style="--o:.35;left:1250px;top:141px;width:520px;height:619px" aria-hidden="true"><use href="#berg"/></svg>
+        <div class="waterline"></div>
+        <div class="hdr"><div class="kicker rv">Содержание</div><h2 class="rv">План доклада</h2></div>
+        <ol class="plan">
+            <li class="rv"><span class="n">−01</span><span class="t">Что такое TCO и зачем она нужна</span></li>
+            <li class="rv"><span class="n">−02</span><span class="t">Структура: прямые и косвенные затраты</span></li>
+            <li class="rv"><span class="n">−03</span><span class="t">Скрытые затраты</span></li>
+            <li class="rv"><span class="n">−04</span><span class="t">CAPEX и OPEX: в чём разница</span></li>
+            <li class="rv"><span class="n">−05</span><span class="t">Расчёт TCO на примере</span></li>
+            <li class="rv"><span class="n">−06</span><span class="t">Как снизить TCO и выводы</span></li>
+        </ol>
+        <aside class="notes">План такой: сначала разберём само понятие и зачем оно нужно, затем — структуру TCO: прямые и косвенные затраты. Отдельно остановлюсь на скрытых затратах, потом сравню CAPEX и OPEX, посчитаю TCO на примере «своя серверная или облако» и закончу тем, как TCO можно снизить.</aside>
+    </section>
+
+    <!-- === SLIDE 3: DEFINITION === -->
+    <section class="slide s-def" data-title="Что такое TCO">
+        <div class="waterline"></div>
+        <div class="hdr" style="top:92px"><div class="kicker rv">01 · Понятие</div></div>
+        <p class="statement rv"><em class="a">TCO</em> — полная стоимость владения ИТ-активом за весь жизненный цикл: от выбора и покупки до вывода из эксплуатации</p>
+        <div class="facts">
+            <div class="fact rv"><div class="big">1980-е</div><p class="cap">концепцию популяризировала аналитическая компания Gartner</p></div>
+            <div class="fact rv"><div class="big">3–5 лет</div><p class="cap">типичный горизонт расчёта</p></div>
+            <div class="fact rv"><div class="big">любой актив</div><p class="cap">сервер, ПО, ЦОД, облачный сервис, вся инфраструктура</p></div>
+        </div>
+        <aside class="notes">TCO — это полная стоимость владения ИТ-активом за весь его жизненный цикл: от выбора и покупки до вывода из эксплуатации. Концепцию популяризировала аналитическая компания Gartner в конце 1980-х, сначала — для оценки стоимости владения персональными компьютерами. Сегодня TCO считают для чего угодно: сервера, программы, центра обработки данных, облачного сервиса. Обычно горизонт расчёта — от трёх до пяти лет.</aside>
+    </section>
+
+    <!-- === SLIDE 4: WHY KEY METRIC === -->
+    <section class="slide" data-title="Почему TCO — ключевая метрика">
+        <div class="waterline"></div>
+        <div class="hdr"><div class="kicker rv">01 · Зачем</div><h2 class="rv">Почему TCO — ключевая метрика</h2></div>
+        <div class="body">
+            <p class="motto rv">Дешевле купить <em class="a">≠</em> дешевле владеть</p>
+            <div class="cols c3">
+                <div class="card rv"><div class="n">01</div><h3>Честное сравнение</h3><p>Купить, арендовать или уйти в облако — на одной базе</p></div>
+                <div class="card rv"><div class="n">02</div><h3>Бюджет на годы</h3><p>Не только на момент закупки, а на весь срок службы</p></div>
+                <div class="card rv"><div class="n">03</div><h3>Основа для ROI, NPV, TEI</h3><p>TCO — затратная часть любой оценки эффективности</p></div>
+            </div>
+        </div>
+        <aside class="notes">Почему это ключевая метрика? Главная мысль: дешевле купить — не значит дешевле владеть. TCO позволяет сравнить альтернативы на одной базе: купить оборудование, взять в аренду или уйти в облако. Она даёт реалистичный бюджет не только на момент закупки, а на годы вперёд. И наконец, TCO — это затратная часть любой оценки эффективности: ROI, NPV, TEI без неё не посчитать.</aside>
+    </section>
+
+    <!-- === SLIDE 5: STRUCTURE === -->
+    <section class="slide s-struct" data-title="Структура TCO">
+        <svg class="berg berg-fade" style="left:1360px;top:456px;width:470px;height:560px" aria-hidden="true"><use href="#berg"/></svg>
+        <div class="waterline"></div>
+        <div class="hdr"><div class="kicker rv">02 · Структура</div><h2 class="rv">Из чего складывается TCO</h2></div>
+        <div class="layer up">
+            <div class="lbl rv"><b>Прямые</b> — видны в бюджете</div>
+            <div class="pills rv"><span class="pill">Оборудование</span><span class="pill">ПО и лицензии</span><span class="pill">Внедрение</span><span class="pill">Персонал ИТ</span><span class="pill">Энергия и помещение</span><span class="pill">Поддержка вендора</span></div>
+        </div>
+        <div class="layer down">
+            <div class="lbl rv"><b>Косвенные</b> — не видны в бюджете</div>
+            <div class="pills rv"><span class="pill">Простои</span><span class="pill">Потеря продуктивности</span><span class="pill">Самоподдержка пользователей</span><span class="pill">Неформальное обучение</span></div>
+        </div>
+        <p class="formula-line rv"><b>TCO</b> = прямые затраты + косвенные затраты</p>
+        <aside class="notes">Структуру TCO удобно показать как айсберг. Над водой — прямые затраты, которые видны в бюджете: оборудование, программное обеспечение и лицензии, внедрение, зарплата ИТ-специалистов, электроэнергия, помещение, поддержка поставщика. Под водой — косвенные затраты, которых нет ни в одной смете: простои, потеря продуктивности, время, когда пользователи сами разбираются с системой или помогают друг другу, неформальное обучение. Сумма прямых и косвенных — и есть TCO.</aside>
+    </section>
+
+    <!-- === SLIDE 6: LIFECYCLE === -->
+    <section class="slide" data-title="Жизненный цикл">
+        <div class="waterline"></div>
+        <div class="hdr"><div class="kicker rv">02 · Жизненный цикл</div><h2 class="rv">TCO считают за весь срок жизни актива</h2></div>
+        <div class="timeline">
+            <div class="ph rv"><div class="n">01</div><h3>Планирование</h3><p>требования, выбор, пилот</p></div>
+            <div class="ph rv"><div class="n">02</div><h3>Приобретение</h3><p>оборудование, лицензии</p></div>
+            <div class="ph rv"><div class="n">03</div><h3>Внедрение</h3><p>установка, миграция, обучение</p></div>
+            <div class="ph hot rv"><div class="n">04</div><h3>Эксплуатация</h3><p>персонал, энергия, поддержка, обновления — годами</p></div>
+            <div class="ph rv"><div class="n">05</div><h3>Модернизация</h3><p>апгрейд, масштабирование</p></div>
+            <div class="ph rv"><div class="n">06</div><h3>Вывод</h3><p>перенос данных, утилизация</p></div>
+        </div>
+        <p class="callout rv">Эксплуатация — самый долгий этап: здесь копится основная часть TCO</p>
+        <aside class="notes">TCO считают по всему жизненному циклу актива: планирование, приобретение, внедрение, эксплуатация, модернизация и вывод из эксплуатации. Самый долгий этап — эксплуатация: система работает годами, и именно здесь накапливается основная часть затрат — персонал, энергия, поддержка, обновления. Поэтому смотреть только на цену покупки — ошибка.</aside>
+    </section>
+
+    <!-- === SLIDE 7: HIDDEN COSTS === -->
+    <section class="slide" data-title="Скрытые затраты">
+        <div class="waterline"></div>
+        <div class="hdr"><div class="kicker rv">03 · Под водой</div><h2 class="rv">Скрытые затраты</h2></div>
+        <div class="body">
+            <div class="hidden-grid">
+                <div class="hc rv"><div class="n">−01</div><h3>Интеграция и миграция</h3><p>стыковка с текущими системами, перенос данных</p></div>
+                <div class="hc rv"><div class="n">−02</div><h3>Обучение</h3><p>время сотрудников и спад продуктивности на старте</p></div>
+                <div class="hc rv"><div class="n">−03</div><h3>Простои и сбои</h3><p>каждый час недоступности — потерянная выручка</p></div>
+                <div class="hc rv"><div class="n">−04</div><h3>Теневое ИТ</h3><p>сервисы, купленные отделами в обход ИТ-службы</p></div>
+                <div class="hc rv"><div class="n">−05</div><h3>Привязка к вендору</h3><p>стоимость ухода, плата за выгрузку данных</p></div>
+                <div class="hc rv"><div class="n">−06</div><h3>Безопасность и закон</h3><p>защита данных, аудит, требования 152-ФЗ</p></div>
+            </div>
+        </div>
+        <aside class="notes">Отдельно о скрытых затратах — тех, которые чаще всего забывают при планировании. Это интеграция с существующими системами и миграция данных; обучение сотрудников и падение продуктивности на старте; простои, когда каждый час недоступности системы означает потерянную выручку; теневое ИТ — сервисы, которые отделы покупают в обход ИТ-службы; привязка к поставщику и стоимость ухода от него, например плата за выгрузку данных из облака; и требования безопасности и законодательства — в России, в частности, 152-ФЗ о персональных данных.</aside>
+    </section>
+
+    <!-- === SLIDE 8: CAPEX / OPEX === -->
+    <section class="slide" data-title="CAPEX и OPEX">
+        <div class="waterline"></div>
+        <div class="hdr"><div class="kicker rv">04 · Два типа затрат</div><h2 class="rv">CAPEX и OPEX</h2></div>
+        <div class="body">
+            <div class="duo">
+                <div class="card capex rv">
+                    <div class="tag">CAPEX</div>
+                    <div class="verb">«купить»</div>
+                    <p class="def">Капитальные затраты на активы, которые служат дольше года</p>
+                    <p class="acc"><b>Учёт:</b> актив на балансе → амортизация</p>
+                    <div class="chips"><span class="chip">серверы</span><span class="chip">СХД</span><span class="chip">серверная</span><span class="chip">бессрочные лицензии</span></div>
+                </div>
+                <div class="card opex rv">
+                    <div class="tag">OPEX</div>
+                    <div class="verb">«платить за использование»</div>
+                    <p class="def">Операционные затраты на текущую работу</p>
+                    <p class="acc"><b>Учёт:</b> расход периода → сразу в затраты</p>
+                    <div class="chips"><span class="chip">облако</span><span class="chip">SaaS</span><span class="chip">зарплата</span><span class="chip">энергия</span><span class="chip">аренда</span></div>
+                </div>
+            </div>
+        </div>
+        <aside class="notes">Теперь о том, как эти затраты классифицируют с точки зрения финансов. CAPEX — капитальные затраты: компания покупает актив, который служит больше года, например серверы, систему хранения данных или бессрочные лицензии. Он ставится на баланс и списывается постепенно через амортизацию. OPEX — операционные затраты: регулярные платежи за текущую работу — облако, подписки на SaaS, зарплата, электроэнергия, аренда. Они сразу относятся на расходы периода.</aside>
+    </section>
+
+    <!-- === SLIDE 9: COMPARISON TABLE === -->
+    <section class="slide" data-title="CAPEX vs OPEX: сравнение">
+        <div class="waterline"></div>
+        <div class="hdr"><div class="kicker rv">04 · Сравнение</div><h2 class="rv">CAPEX vs OPEX</h2></div>
+        <div class="body" style="top:340px">
+            <table class="cmp rv">
+                <thead><tr><th>Критерий</th><th class="ca">CAPEX</th><th class="op">OPEX</th></tr></thead>
+                <tbody>
+                    <tr><td>Платёж</td><td>крупный, разовый, в начале</td><td>регулярный, по мере использования</td></tr>
+                    <tr><td>Учёт</td><td>актив, амортизация</td><td>расход текущего периода</td></tr>
+                    <tr><td>Гибкость</td><td>низкая — мощность «заморожена»</td><td>высокая — масштаб под нагрузку</td></tr>
+                    <tr><td>Контроль</td><td>полный контроль над активом</td><td>зависимость от поставщика</td></tr>
+                    <tr><td>Главный риск</td><td>устаревание и недозагрузка</td><td>рост тарифов, привязка к вендору</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <aside class="notes">Сравним их по ключевым критериям. CAPEX — это крупный платёж в начале, OPEX — регулярные платежи по мере использования. CAPEX учитывается как актив с амортизацией, OPEX — как расход текущего периода. По гибкости выигрывает OPEX: мощность можно наращивать и сокращать под нагрузку, а купленный сервер «заморожен». Зато CAPEX даёт полный контроль над активом. Главные риски: у CAPEX — устаревание и недозагрузка оборудования, у OPEX — рост тарифов и зависимость от поставщика.</aside>
+    </section>
+
+    <!-- === SLIDE 10: SHIFT TO OPEX === -->
+    <section class="slide s-shift" data-title="Сдвиг к OPEX">
+        <div class="waterline"></div>
+        <div class="hdr" style="top:92px"><div class="kicker rv">04 · Тренд</div></div>
+        <p class="statement rv">Облака и модель «как услуга» переводят ИТ из <em class="a">CAPEX</em> в <em class="c">OPEX</em></p>
+        <div class="cols c2">
+            <div class="rv"><div class="list-h plus">Что даёт</div><ul class="dl"><li>старт без крупных вложений</li><li>оплата по факту использования</li><li>быстрое масштабирование</li></ul></div>
+            <div class="rv"><div class="list-h minus">Чем рискует</div><ul class="dl neg"><li>на длинном горизонте может стоить дороже</li><li>рост тарифов и курса валют</li><li>счёт сложно прогнозировать → нужен FinOps</li></ul></div>
+        </div>
+        <p class="punch rv">Тип затрат ≠ их размер. Решение принимают по TCO.</p>
+        <aside class="notes">Облака и модель «как услуга» — IaaS, PaaS, SaaS — переводят ИТ из CAPEX в OPEX. Это даёт быстрый старт без крупных вложений, оплату по факту и масштабирование. Но есть обратная сторона: на длинном горизонте облако может обойтись дороже, тарифы и курс растут, а счёт сложно прогнозировать — для этого появилась практика FinOps. Поэтому важно: тип затрат ничего не говорит об их размере. Решение принимают по TCO.</aside>
+    </section>
+
+    <!-- === SLIDE 11: FORMULA === -->
+    <section class="slide" data-title="Как посчитать TCO">
+        <div class="waterline"></div>
+        <div class="hdr"><div class="kicker rv">05 · Расчёт</div><h2 class="rv">Как посчитать TCO</h2></div>
+        <div class="body" style="top:320px">
+            <div class="rv">
+                <div class="fx-cap">базовая формула</div>
+                <div class="fx"><b>TCO</b><span class="eq">=</span><span>CAPEX</span><span class="eq">+</span><span class="sig"><span>N</span><span class="s">Σ</span><span>t=1</span></span><span>(OPEX<sub>t</sub> + H<sub>t</sub>)</span></div>
+            </div>
+            <div class="rv" style="margin-top:40px">
+                <div class="fx-cap">с учётом стоимости денег</div>
+                <div class="fx"><b>TCO</b><span class="eq">=</span><span>CAPEX<sub>0</sub></span><span class="eq">+</span><span class="sig"><span>N</span><span class="s">Σ</span><span>t=1</span></span><span class="frac"><span class="top">OPEX<sub>t</sub> + H<sub>t</sub></span><span class="bot">(1 + r)<sup>t</sup></span></span></div>
+            </div>
+            <div class="legend rv"><span><b>N</b>горизонт, 3–5 лет</span><span><b>H</b>скрытые затраты</span><span><b>r</b>ставка дисконтирования</span></div>
+            <div class="steps rv"><span>границы и горизонт</span><i>→</i><span>все статьи затрат</span><i>→</i><span>по годам</span><i>→</i><span>дисконтирование</span><i>→</i><span>сравнение вариантов</span></div>
+        </div>
+        <aside class="notes">Как посчитать TCO. В простом виде это капитальные затраты плюс сумма операционных и скрытых затрат за каждый год горизонта. Если горизонт длинный, учитывают стоимость денег во времени и дисконтируют будущие платежи по ставке r — так же, как при расчёте NPV. Порядок такой: определить границы и горизонт, собрать все статьи затрат, разложить их по годам, продисконтировать и сравнить альтернативы.</aside>
+    </section>
+
+    <!-- === SLIDE 12: EXAMPLE TABLE === -->
+    <section class="slide" data-title="Пример расчёта">
+        <div class="waterline"></div>
+        <div class="hdr"><div class="kicker rv">05 · Пример · условные данные, млн ₽, 3 года</div><h2 class="rv">Своя серверная или облако?</h2></div>
+        <div class="body" style="top:330px">
+            <table class="cmp rv">
+                <thead><tr><th>Статья</th><th class="ca">Своя инфраструктура</th><th class="op">Облако (IaaS)</th></tr></thead>
+                <tbody>
+                    <tr><td>CAPEX</td><td><span class="num">3,2</span><span class="sm">оборудование 2,0 · лицензии 0,8 · внедрение 0,4</span></td><td><span class="num">0,6</span><span class="sm">миграция</span></td></tr>
+                    <tr><td>OPEX за 3 года</td><td><span class="num">5,1</span><span class="sm">1,7/год: персонал 1,0 · энергия 0,3 · поддержка 0,2 · помещение 0,2</span></td><td><span class="num">8,4</span><span class="sm">2,8/год: ресурсы 2,0 · персонал 0,6 · трафик 0,2</span></td></tr>
+                    <tr><td>Скрытые затраты</td><td><span class="num">0,5</span><span class="sm">простои, обучение</span></td><td><span class="num">0,3</span><span class="sm">обучение, интеграция</span></td></tr>
+                    <tr class="total"><td>TCO за 3 года</td><td><span class="num">8,8</span></td><td><span class="num lose">9,3</span></td></tr>
+                </tbody>
+            </table>
+        </div>
+        <aside class="notes">Пример на условных цифрах. Сравниваем собственную инфраструктуру и облако на горизонте трёх лет. Своя серверная требует 3,2 млн рублей сразу, а дальше 1,7 млн в год: персонал, энергия, поддержка, помещение. Облако почти не требует вложений на старте — только миграция на 0,6 млн, — но стоит 2,8 млн в год. Добавляем скрытые затраты, и за три года своя инфраструктура выходит в 8,8 млн, а облако — в 9,3 млн.</aside>
+    </section>
+
+    <!-- === SLIDE 13: CHART ===
+         Ось X: 0..3 года (x = 90 + 320·t), ось Y: 0..10 млн ₽ (y = 560 − 52·v).
+         Своя: 3,2 + 1,7·t; облако: 0,6 + 2,8·t; пересечение при t ≈ 2,36. -->
+    <section class="slide" data-title="Точка пересечения">
+        <div class="waterline"></div>
+        <div class="hdr"><div class="kicker rv">05 · Накопленные затраты, млн ₽</div><h2 class="rv">Где кривые пересекаются</h2></div>
+        <div class="chart-wrap rv">
+            <svg viewBox="0 0 1120 640" aria-label="График накопленных затрат: своя инфраструктура и облако">
+                <g>
+                    <line class="grid-l" x1="90" x2="1050" y1="560" y2="560"/><text class="ax-t" x="70" y="567" text-anchor="end">0</text>
+                    <line class="grid-l" x1="90" x2="1050" y1="456" y2="456"/><text class="ax-t" x="70" y="463" text-anchor="end">2</text>
+                    <line class="grid-l" x1="90" x2="1050" y1="352" y2="352"/><text class="ax-t" x="70" y="359" text-anchor="end">4</text>
+                    <line class="grid-l" x1="90" x2="1050" y1="248" y2="248"/><text class="ax-t" x="70" y="255" text-anchor="end">6</text>
+                    <line class="grid-l" x1="90" x2="1050" y1="144" y2="144"/><text class="ax-t" x="70" y="151" text-anchor="end">8</text>
+                    <line class="grid-l" x1="90" x2="1050" y1="40" y2="40"/><text class="ax-t" x="70" y="47" text-anchor="end">10</text>
+                    <text class="ax-t" x="90" y="600" text-anchor="middle">старт</text>
+                    <text class="ax-t" x="410" y="600" text-anchor="middle">1 год</text>
+                    <text class="ax-t" x="730" y="600" text-anchor="middle">2 года</text>
+                    <text class="ax-t" x="1050" y="600" text-anchor="middle">3 года</text>
+                </g>
+                <path class="ln cloud" pathLength="1" d="M90 528.8 L410 383.2 L730 237.6 L1050 92"/>
+                <path class="ln own" pathLength="1" d="M90 393.6 L410 305.2 L730 216.8 L1050 128.4"/>
+                <text class="end-t" x="1066" y="98" fill="#5ee6ff">9,0</text>
+                <text class="end-t" x="1066" y="136" fill="#ffb547">8,3</text>
+                <g class="cross">
+                    <line x1="846" x2="846" y1="185" y2="560" stroke="#d8f6ff" stroke-dasharray="6 8" stroke-width="2" opacity=".6"/>
+                    <circle cx="846" cy="185" r="12" fill="#061620" stroke="#d8f6ff" stroke-width="4"/>
+                    <text class="ax-t" x="846" y="628" text-anchor="middle" style="fill:#d8f6ff">≈ 2,4 года</text>
+                </g>
+            </svg>
+        </div>
+        <div class="side">
+            <div class="kpi rv">≈ 2,4 <small>года</small></div>
+            <p class="kcap rv">после этого своя инфраструктура становится дешевле облака</p>
+            <div class="legend2 rv"><span style="color:#ffb547">своя инфраструктура</span><span style="color:#5ee6ff">облако (IaaS)</span></div>
+            <p class="note rv">При переменной нагрузке или коротком горизонте облако выигрывает чаще</p>
+        </div>
+        <aside class="notes">На графике накопленных затрат — без учёта скрытых — видно, что кривые пересекаются примерно через 2,4 года. До этой точки дешевле облако, после — собственная инфраструктура. Вывод: при стабильной нагрузке и длинном горизонте своя серверная может быть выгоднее, а при переменной нагрузке, коротком горизонте или нехватке капитала — облако. Ответ зависит от условий, и именно TCO позволяет его получить.</aside>
+    </section>
+
+    <!-- === SLIDE 14: HOW TO REDUCE === -->
+    <section class="slide" data-title="Как снизить TCO">
+        <div class="waterline"></div>
+        <div class="hdr"><div class="kicker rv">06 · Практика</div><h2 class="rv">Как снизить TCO</h2></div>
+        <div class="body">
+            <div class="cols c2" style="gap:36px 48px">
+                <div class="card rv"><div class="n">01</div><h3>Консолидация и виртуализация</h3><p>меньше серверов, энергии и площадей</p></div>
+                <div class="card rv"><div class="n">02</div><h3>Автоматизация</h3><p>мониторинг и «инфраструктура как код» вместо ручной работы</p></div>
+                <div class="card rv"><div class="n">03</div><h3>FinOps и подбор ресурсов</h3><p>в облаке платить только за реально нужное</p></div>
+                <div class="card rv"><div class="n">04</div><h3>Управление лицензиями</h3><p>убрать лишние и неиспользуемые</p></div>
+            </div>
+        </div>
+        <aside class="notes">Как снизить TCO. Первое — консолидация и виртуализация: меньше физических серверов, энергии и площадей. Второе — автоматизация: мониторинг и инфраструктура как код сокращают ручную работу. Третье — FinOps и подбор размера ресурсов: в облаке платить только за то, что реально используется. Четвёртое — управление лицензиями: убрать лишние и неиспользуемые.</aside>
+    </section>
+
+    <!-- === SLIDE 15: CONCLUSIONS === -->
+    <section class="slide" data-title="Выводы">
+        <div class="waterline"></div>
+        <div class="hdr"><div class="kicker rv">Итоги</div><h2 class="rv">Выводы</h2></div>
+        <div class="body" style="top:330px">
+            <ol class="concl">
+                <li class="rv"><span class="n">01</span><span class="t">Цена покупки — лишь <em class="a">вершина айсберга</em>: основная часть TCO — эксплуатация и скрытые затраты</span></li>
+                <li class="rv"><span class="n">02</span><span class="t">TCO делает альтернативы сравнимыми и даёт реалистичный бюджет на годы</span></li>
+                <li class="rv"><span class="n">03</span><span class="t">CAPEX и OPEX — разные модели оплаты, а не «дорого» и «дёшево»</span></li>
+                <li class="rv"><span class="n">04</span><span class="t">TCO считает только затраты — для решения её дополняют ROI, NPV и TEI</span></li>
+            </ol>
+        </div>
+        <aside class="notes">Подведу итоги. Цена покупки — лишь вершина айсберга: основная часть TCO приходится на эксплуатацию и скрытые затраты. TCO делает альтернативы сравнимыми и даёт реалистичный бюджет. CAPEX и OPEX — это разные модели оплаты, а не «дорого» и «дёшево»: выбор зависит от горизонта, нагрузки и наличия капитала. И важное ограничение: TCO считает только затраты, поэтому для решения её дополняют метриками эффективности — ROI, NPV и TEI.</aside>
+    </section>
+
+    <!-- === SLIDE 16: THANK YOU === -->
+    <section class="slide s-end" data-title="Спасибо">
+        <svg class="berg berg-fade" style="left:1250px;top:451px;width:520px;height:619px" aria-hidden="true"><use href="#berg"/></svg>
+        <div class="waterline"></div>
+        <h2 class="rv">Спасибо<br>за внимание!</h2>
+        <p class="q rv">Вопросы?</p>
+        <p class="who rv"><b>Махов А. С.</b> · группа [ВСТАВЬ] · Тема 14: совокупная стоимость владения (TCO)</p>
+        <aside class="notes">Спасибо за внимание! Готов ответить на вопросы.</aside>
+    </section>
+
+    <!-- глубиномер: позиция метки = номер слайда -->
+    <div class="depth" id="depth" aria-hidden="true"></div>
+</main>
+</div>
+
+<!-- === DECK CHROME (вне сцены) === -->
+<div class="progress" id="progress"></div>
+<nav class="deck-controls" id="controls" aria-label="Навигация по слайдам">
+    <button id="prevBtn" aria-label="Предыдущий слайд">←</button>
+    <span class="count" id="count">1 / 16</span>
+    <button id="nextBtn" aria-label="Следующий слайд">→</button>
+    <button id="notesBtn" title="Заметки докладчика (N)">заметки</button>
+    <button id="presBtn" title="Окно докладчика (P)">докладчик</button>
+    <button id="fsBtn" title="Полный экран (F)">⛶</button>
+    <button id="helpBtn" title="Клавиши (?)">?</button>
+</nav>
+<div class="notes-panel" id="notesPanel" aria-live="polite"><div class="h">Заметки докладчика</div><div id="notesText"></div></div>
+<div class="help" id="help"><div class="box">
+    <div><kbd>→</kbd><kbd>Пробел</kbd>следующий слайд</div>
+    <div><kbd>←</kbd>предыдущий слайд</div>
+    <div><kbd>Home</kbd><kbd>End</kbd>первый / последний</div>
+    <div><kbd>N</kbd>заметки докладчика</div>
+    <div><kbd>P</kbd>окно докладчика (для второго экрана)</div>
+    <div><kbd>F</kbd>полный экран</div>
+    <div><kbd>E</kbd>режим правки текста · <kbd>Ctrl+S</kbd>сохранить файл</div>
+</div></div>
+
+<div class="edit-hotzone" id="editHotzone"></div>
+<button class="edit-toggle" id="editToggle" title="Режим правки (E)">✏️ правка</button>
+<button class="edit-reset" id="editReset" title="Сбросить все правки">сбросить правки</button>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   Навигация: стрелки, пробел, PgUp/PgDn, Home/End, колесо, свайп.
+   Номер слайда хранится в адресе (#5).
+   =========================================== */
+class SlidePresentation {
+    constructor() {
+        this.stage = document.getElementById('deckStage');
+        this.slides = [...document.querySelectorAll('.slide')];
+        this.current = 0;
+        this.presenter = null;
+        this.startTime = null;
+
+        this.prepareSlides();
+        this.buildDepthGauge();
+        this.setupStageScale();
+        this.setupKeyboardNav();
+        this.setupTouchNav();
+        this.setupWheelNav();
+        this.setupControls();
+
+        const fromHash = parseInt(location.hash.slice(1), 10);
+        this.showSlide(Number.isFinite(fromHash) ? fromHash - 1 : 0);
+    }
+
+    /* порядок появления элементов и нижний колонтитул */
+    prepareSlides() {
+        const total = this.slides.length;
+        this.slides.forEach((slide, i) => {
+            slide.querySelectorAll('.rv').forEach((el, k) => el.style.setProperty('--i', k));
+            if (i > 0 && !slide.querySelector('.chrome')) {
+                const c = document.createElement('div');
+                c.className = 'chrome';
+                c.innerHTML = `<span>TCO · Махов А. С.</span><span>${String(i + 1).padStart(2, '0')} / ${total}</span>`;
+                slide.appendChild(c);
+            }
+        });
+    }
+
+    buildDepthGauge() {
+        this.depth = document.getElementById('depth');
+        const n = this.slides.length;
+        for (let i = 0; i < n; i++) {
+            const t = document.createElement('div');
+            t.className = 'tick';
+            t.style.top = (i / (n - 1) * 100) + '%';
+            this.depth.appendChild(t);
+        }
+        this.mark = document.createElement('div'); this.mark.className = 'mark';
+        this.depthLabel = document.createElement('div'); this.depthLabel.className = 'dl2';
+        this.depth.append(this.mark, this.depthLabel);
+    }
+
+    setupStageScale() {
+        const scale = () => {
+            const f = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+            const x = (window.innerWidth - 1920 * f) / 2;
+            const y = (window.innerHeight - 1080 * f) / 2;
+            this.stage.style.transform = `translate(${x}px, ${y}px) scale(${f})`;
+        };
+        scale();
+        window.addEventListener('resize', scale);
+    }
+
+    setupKeyboardNav() {
+        document.addEventListener('keydown', (e) => {
+            if (e.target.isContentEditable) return;
+            const k = e.key;
+            if (['ArrowRight', 'ArrowDown', 'PageDown', ' ', 'Enter'].includes(k)) { e.preventDefault(); this.next(); }
+            else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'].includes(k)) { e.preventDefault(); this.prev(); }
+            else if (k === 'Home') this.showSlide(0);
+            else if (k === 'End') this.showSlide(this.slides.length - 1);
+            else if (k === 'n' || k === 'N' || k === 'т' || k === 'Т') this.toggleNotes();
+            else if (k === 'p' || k === 'P' || k === 'з' || k === 'З') this.openPresenter();
+            else if (k === 'f' || k === 'F' || k === 'а' || k === 'А') this.toggleFullscreen();
+            else if (k === '?' || k === 'h' || k === 'H') document.getElementById('help').classList.toggle('open');
+            else if (k === 'Escape') document.getElementById('help').classList.remove('open');
+        });
+    }
+
+    setupTouchNav() {
+        let x0 = null, y0 = null;
+        document.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+        document.addEventListener('touchend', (e) => {
+            if (x0 === null) return;
+            const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
+            if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) dx < 0 ? this.next() : this.prev();
+            x0 = null;
+        });
+    }
+
+    setupWheelNav() {
+        let lock = false;
+        window.addEventListener('wheel', (e) => {
+            if (lock || Math.abs(e.deltaY) < 30 || e.target.closest('.notes-panel')) return;
+            lock = true; setTimeout(() => (lock = false), 800);
+            e.deltaY > 0 ? this.next() : this.prev();
+        }, { passive: true });
+    }
+
+    setupControls() {
+        document.getElementById('prevBtn').onclick = () => this.prev();
+        document.getElementById('nextBtn').onclick = () => this.next();
+        document.getElementById('notesBtn').onclick = () => this.toggleNotes();
+        document.getElementById('presBtn').onclick = () => this.openPresenter();
+        document.getElementById('fsBtn').onclick = () => this.toggleFullscreen();
+        document.getElementById('helpBtn').onclick = () => document.getElementById('help').classList.toggle('open');
+        document.getElementById('help').onclick = (e) => { if (e.target.id === 'help') e.currentTarget.classList.remove('open'); };
+
+        // панель управления прячется, если мышь не двигается
+        const controls = document.getElementById('controls');
+        let t;
+        const wake = () => { controls.classList.remove('idle'); clearTimeout(t); t = setTimeout(() => controls.classList.add('idle'), 2500); };
+        document.addEventListener('mousemove', wake);
+        wake();
+    }
+
+    next() { this.showSlide(this.current + 1); }
+    prev() { this.showSlide(this.current - 1); }
+
+    showSlide(index) {
+        const n = this.slides.length;
+        this.current = Math.max(0, Math.min(index, n - 1));
+        this.slides.forEach((s, i) => {
+            s.classList.toggle('active', i === this.current);
+            s.classList.toggle('visible', i === this.current);
+        });
+        document.getElementById('count').textContent = `${this.current + 1} / ${n}`;
+        document.getElementById('progress').style.width = ((this.current + 1) / n * 100) + '%';
+        const pos = (this.current / (n - 1) * 100) + '%';
+        this.mark.style.top = pos;
+        this.depthLabel.style.top = pos;
+        this.depthLabel.textContent = '−' + String(this.current + 1).padStart(2, '0');
+        history.replaceState(null, '', '#' + (this.current + 1));
+        document.getElementById('notesText').textContent = this.notesOf(this.current);
+        this.updatePresenter();
+    }
+
+    notesOf(i) {
+        const el = this.slides[i] && this.slides[i].querySelector('.notes');
+        return el ? el.textContent.trim() : '';
+    }
+
+    toggleNotes() { document.getElementById('notesPanel').classList.toggle('open'); }
+
+    toggleFullscreen() {
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+        else document.exitFullscreen?.();
+    }
+
+    /* ===========================================
+       PRESENTER WINDOW
+       Отдельное окно с текстом выступления, следующим слайдом и таймером.
+       Окно с презентацией выводите на проектор, окно докладчика — на ноутбук.
+       =========================================== */
+    openPresenter() {
+        if (this.presenter && !this.presenter.closed) { this.presenter.focus(); return; }
+        const w = window.open('', 'tco-presenter', 'width=900,height=640');
+        if (!w) { alert('Браузер заблокировал всплывающее окно — разрешите всплывающие окна для этой страницы.'); return; }
+        this.presenter = w;
+        this.startTime = Date.now();
+        w.document.write(`<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>Окно докладчика — TCO</title>
+<style>
+body{margin:0;padding:28px 32px;background:#04121c;color:#e9f6fb;font:18px/1.6 'Golos Text',system-ui,sans-serif}
+.top{display:flex;justify-content:space-between;align-items:center;font-family:monospace;color:#7fa3b3}
+#timer{font-size:28px;color:#ffb547}
+h1{margin:18px 0 6px;font-size:26px}
+#next{color:#7fa3b3;margin-bottom:18px}
+#notes{font-size:24px;line-height:1.6;white-space:pre-wrap}
+.btns{position:fixed;bottom:20px;right:24px;display:flex;gap:10px}
+button{font:16px monospace;padding:10px 18px;border-radius:10px;border:1px solid #2b5566;background:#08283a;color:#e9f6fb;cursor:pointer}
+</style></head><body>
+<div class="top"><span id="cnt"></span><span id="timer">00:00</span></div>
+<h1 id="title"></h1><div id="next"></div><div id="notes"></div>
+<div class="btns"><button onclick="opener.deck.prev()">← назад</button><button onclick="opener.deck.next()">вперёд →</button></div>
+<script>
+document.addEventListener('keydown',function(e){
+ if(['ArrowRight','ArrowDown','PageDown',' '].includes(e.key)){e.preventDefault();opener.deck.next();}
+ if(['ArrowLeft','ArrowUp','PageUp'].includes(e.key)){e.preventDefault();opener.deck.prev();}
+});
+<\/script></body></html>`);
+        w.document.close();
+        clearInterval(this.timerId);
+        this.timerId = setInterval(() => {
+            if (!this.presenter || this.presenter.closed) { clearInterval(this.timerId); return; }
+            const s = Math.floor((Date.now() - this.startTime) / 1000);
+            const el = this.presenter.document.getElementById('timer');
+            if (el) el.textContent = String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+        }, 1000);
+        this.updatePresenter();
+    }
+
+    updatePresenter() {
+        const w = this.presenter;
+        if (!w || w.closed) return;
+        const d = w.document, i = this.current, n = this.slides.length;
+        const byId = (id) => d.getElementById(id);
+        if (!byId('title')) return;
+        byId('cnt').textContent = `Слайд ${i + 1} из ${n}`;
+        byId('title').textContent = this.slides[i].dataset.title || '';
+        byId('next').textContent = i < n - 1 ? 'Дальше: ' + (this.slides[i + 1].dataset.title || '') : 'Последний слайд';
+        byId('notes').textContent = this.notesOf(i);
+    }
+}
+
+/* ===========================================
+   INLINE EDITOR
+   E или клик в левый верхний угол — режим правки.
+   Правки сохраняются в браузере автоматически; Ctrl+S — скачать исправленный HTML.
+   =========================================== */
+class InlineEditor {
+    constructor(deck) {
+        this.deck = deck;
+        this.isActive = false;
+        this.key = 'tco-deck-v1';
+        this.selector = 'h1, h2, h3, p, li .t, li .n, .chip, .pill, td, th, .kicker, .big, .tag, .verb, .lbl, .list-h, .dl li, .motto, .kpi, .steps span';
+        this.toggle = document.getElementById('editToggle');
+        this.restore();
+        this.bind();
+    }
+
+    targets() {
+        return [...document.querySelectorAll('.slide')].flatMap((s) => [...s.querySelectorAll(this.selector)])
+            .filter((el) => !el.closest('.notes, .chrome, svg'));
+    }
+
+    bind() {
+        const hot = document.getElementById('editHotzone');
+        let hideT = null;
+        const show = () => { clearTimeout(hideT); this.toggle.classList.add('show'); };
+        const hide = () => { hideT = setTimeout(() => { if (!this.isActive) this.toggle.classList.remove('show'); }, 400); };
+        hot.addEventListener('mouseenter', show);
+        hot.addEventListener('mouseleave', hide);
+        this.toggle.addEventListener('mouseenter', () => clearTimeout(hideT));
+        this.toggle.addEventListener('mouseleave', hide);
+        hot.addEventListener('click', () => this.toggleEditMode());
+        this.toggle.addEventListener('click', () => this.toggleEditMode());
+        document.getElementById('editReset').addEventListener('click', () => {
+            if (!confirm('Сбросить все правки и вернуть исходный текст?')) return;
+            try { localStorage.removeItem(this.key); } catch (e) {}
+            location.reload();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if ((e.key === 'e' || e.key === 'E' || e.key === 'у' || e.key === 'У') && !e.target.isContentEditable && !e.ctrlKey && !e.metaKey) {
+                this.toggleEditMode();
+            }
+            if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'ы')) { e.preventDefault(); this.download(); }
+        });
+        document.addEventListener('input', (e) => { if (e.target.isContentEditable) this.save(); });
+    }
+
+    toggleEditMode() {
+        this.isActive = !this.isActive;
+        document.body.classList.toggle('editing', this.isActive);
+        this.toggle.classList.toggle('active', this.isActive);
+        this.toggle.textContent = this.isActive ? '✓ готово' : '✏️ правка';
+        this.targets().forEach((el) => {
+            if (this.isActive) el.setAttribute('contenteditable', 'true');
+            else el.removeAttribute('contenteditable');
+        });
+        if (!this.isActive) { this.save(); this.toggle.classList.remove('show'); }
+    }
+
+    save() {
+        const data = this.targets().map((el) => el.innerHTML);
+        try { localStorage.setItem(this.key, JSON.stringify(data)); } catch (e) {}
+    }
+
+    restore() {
+        let data = null;
+        try { data = JSON.parse(localStorage.getItem(this.key) || 'null'); } catch (e) {}
+        if (!Array.isArray(data)) return;
+        const els = this.targets();
+        if (data.length !== els.length) return; // структура изменилась — правки не применяем
+        els.forEach((el, i) => { el.innerHTML = data[i]; });
+    }
+
+    /* скачать HTML с текущими правками */
+    download() {
+        const wasActive = this.isActive;
+        if (wasActive) this.toggleEditMode();
+        const clone = document.documentElement.cloneNode(true);
+        clone.querySelectorAll('.chrome, .depth > *').forEach((el) => el.remove());
+        clone.querySelectorAll('.slide').forEach((s) => s.classList.remove('active', 'visible'));
+        clone.querySelector('body').classList.remove('editing');
+        const html = '<!DOCTYPE html>\n' + clone.outerHTML;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+        a.download = 'tco-prezentaciya.html';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        if (wasActive) this.toggleEditMode();
+    }
+}
+
+window.deck = new SlidePresentation();
+window.editor = new InlineEditor(window.deck);
+</script>
+</body>
+</html>
